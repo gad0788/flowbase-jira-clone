@@ -72,7 +72,14 @@ export default function App() {
     const u = localStorage.getItem('user');
     return u ? JSON.parse(u) : null;
   });
-  const [token] = useState(() => localStorage.getItem('token'));
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
+
+  const handleAuth = () => {
+    const t = localStorage.getItem('token');
+    setToken(t);
+    const u = localStorage.getItem('user');
+    setUser(u ? JSON.parse(u) : null);
+  };
 
   useEffect(() => {
     const handler = (e) => {
@@ -159,6 +166,7 @@ export default function App() {
   const signOut = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    setToken(null);
     setUser(null);
     navigate('/login');
   };
@@ -166,8 +174,8 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<Login onAuth={handleAuth} />} />
+        <Route path="/register" element={<Register onAuth={handleAuth} />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -243,7 +251,8 @@ export default function App() {
         </div>
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div className="user-avatar" title={user.displayName}>{user.displayName.charAt(0)}</div>
+            <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{user.email}</span>
+            <div className="user-avatar" title={user.email}>{user.displayName.charAt(0)}</div>
             <button onClick={signOut} className="sign-out-btn">Sign out</button>
           </div>
         )}
@@ -258,8 +267,8 @@ export default function App() {
           <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
           <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
           <Route path="/projects/:id/sprints" element={<Sprints />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<Login onAuth={handleAuth} />} />
+          <Route path="/register" element={<Register onAuth={handleAuth} />} />
         </Routes>
       </main>
     </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { post } from '../api';
 
-export default function Login() {
+export default function Login({ onAuth }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -17,6 +17,7 @@ export default function Login() {
       const res = await post('/auth/login', { email, password });
       localStorage.setItem('token', res.token);
       localStorage.setItem('user', JSON.stringify({ id: res.userId, displayName: res.displayName, email: res.email }));
+      if (onAuth) onAuth();
       navigate('/');
     } catch (err) {
       setError('Invalid email or password');

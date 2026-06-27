@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { post } from '../api';
 
-export default function Register() {
+export default function Register({ onAuth }) {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,6 +18,7 @@ export default function Register() {
       const res = await post('/auth/register', { displayName, email, password });
       localStorage.setItem('token', res.token);
       localStorage.setItem('user', JSON.stringify({ id: res.userId, displayName: res.displayName, email: res.email }));
+      if (onAuth) onAuth();
       navigate('/');
     } catch (err) {
       const msg = err.message.includes('400') ? 'Email already registered' : 'Registration failed';

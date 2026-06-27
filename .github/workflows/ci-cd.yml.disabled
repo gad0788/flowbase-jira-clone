@@ -1,0 +1,823 @@
+name: Java Production Pipeline
+
+on:
+  push:
+    branches: [main, develop, "release/**", "feature/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Force deploy to production (skip canary wait)"
+        required: false
+        default: "false"
+
+# Cancel in-progress runs for same branch (saves CI minutes)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  MAVEN_OPTS: "-Xmx2g -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+  IMAGE_NAME: my-java-app
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  EKS_CLUSTER_NAME: tapestry-prod-cluster
+  HELM_CHART_PATH: ./helm/my-java-app
+  GITOPS_REPO: org/gitops-manifests      # separate repo for ArgoCD manifests
+  SONAR_PROJECT_KEY: tapestry-java-app
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 1 — VALIDATE & COMPILE
+# Triggers on: every push, every PR
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  validate:
+    name: "1 · Validate & Compile"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image_tag: ${{ steps.version.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history needed for SemVer + secret scanning
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Validate POM + resolve dependencies
+        run: ./mvnw validate dependency:resolve --no-transfer-progress
+
+      - name: Enforce code style (Checkstyle)
+        run: ./mvnw checkstyle:check --no-transfer-progress
+
+      - name: Compile (fail fast before tests)
+        run: ./mvnw compile --no-transfer-progress
+
+      - name: Derive version and image tag
+        id: version
+        run: |
+          VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          SHORT_SHA=${GITHUB_SHA::8}
+          IMAGE_TAG="${VERSION}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "📦 Version: ${VERSION} | Image tag: ${IMAGE_TAG}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 2 — UNIT TESTS + COVERAGE
+# ─────────────────────────────────────────────────────────────────────────────
+  unit-test:
+    name: "2 · Unit Tests + Coverage"
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run unit tests with JaCoCo
+        run: |
+          ./mvnw test \
+            -Djacoco.minimum.line-coverage=0.80 \
+            -Djacoco.minimum.branch-coverage=0.75 \
+            --no-transfer-progress
+
+      - name: Enforce coverage threshold
+        run: ./mvnw jacoco:check --no-transfer-progress
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Unit Test Results
+          path: target/surefire-reports/*.xml
+          reporter: java-junit
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 3 — INTEGRATION TESTS (real DB/services via Docker Compose)
+# ─────────────────────────────────────────────────────────────────────────────
+  integration-test:
+    name: "3 · Integration Tests"
+    runs-on: ubuntu-latest
+    needs: validate
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 10s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run integration tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+          SPRING_DATASOURCE_USERNAME: testuser
+          SPRING_DATASOURCE_PASSWORD: testpass
+          SPRING_REDIS_HOST: localhost
+        run: |
+          ./mvnw verify -P integration-tests \
+            -DskipUnitTests=true \
+            --no-transfer-progress
+
+      - name: Publish integration test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Integration Test Results
+          path: target/failsafe-reports/*.xml
+          reporter: java-junit
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4 — SECURITY GATES (SAST + CVE + SECRET SCAN)
+# NIST 800-53: SI-2, SI-3, SA-11, RA-5
+# ─────────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: "4 · Security Gates"
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      security-events: write   # for uploading SARIF to GitHub Security tab
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      # ── Secret detection (full history scan) ──────────────────────────────
+      - name: Secret detection — Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      # ── SAST: SpotBugs + Find Security Bugs ───────────────────────────────
+      - name: SAST — SpotBugs + Find Security Bugs
+        run: |
+          ./mvnw compile spotbugs:check \
+            -Dspotbugs.effort=Max \
+            -Dspotbugs.threshold=Low \
+            --no-transfer-progress
+
+      # ── Dependency CVE scan (NIST SI-2 evidence) ──────────────────────────
+      - name: CVE scan — OWASP Dependency-Check
+        run: |
+          ./mvnw org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 \
+            -DsuppressionFiles=.owasp-suppression.xml \
+            --no-transfer-progress
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 30      # keep 30 days for ATO audit trail
+
+      # ── Semgrep SAST (custom rules) ───────────────────────────────────────
+      - name: SAST — Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/java
+            p/owasp-top-ten
+            p/secrets
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      # ── License compliance check ───────────────────────────────────────────
+      - name: License compliance
+        run: |
+          ./mvnw license:check \
+            -Dlicense.failIfUnknown=true \
+            --no-transfer-progress
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 5 — SONARQUBE / SONARCLOUD QUALITY GATE
+# ─────────────────────────────────────────────────────────────────────────────
+  sonar:
+    name: "5 · SonarQube Quality Gate"
+    runs-on: ubuntu-latest
+    needs: [unit-test, security-scan]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Download JaCoCo report
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+
+      - name: Run SonarQube analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          ./mvnw sonar:sonar \
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true \
+            --no-transfer-progress
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 6 — BUILD ARTIFACT + PUBLISH TO NEXUS
+# Only on: main, release/**, develop branches (not feature branches)
+# ─────────────────────────────────────────────────────────────────────────────
+  build-artifact:
+    name: "6 · Build JAR + Publish to Nexus"
+    runs-on: ubuntu-latest
+    needs: [unit-test, integration-test, security-scan, sonar]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/develop'
+    outputs:
+      artifact_version: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+          server-id: nexus
+          server-username: NEXUS_USERNAME
+          server-password: NEXUS_PASSWORD
+
+      - name: Build production JAR (skip tests — already passed)
+        run: |
+          ./mvnw package -DskipTests \
+            -Dspring.profiles.active=production \
+            --no-transfer-progress
+
+      - name: Publish JAR to Nexus artifact registry
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: ./mvnw deploy -DskipTests --no-transfer-progress
+
+      - name: Upload JAR for container build
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          retention-days: 1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 7 — CONTAINER IMAGE BUILD + SCAN + SIGN
+# Rootless Buildah — no Docker daemon, NIST AC-6 compliant
+# ─────────────────────────────────────────────────────────────────────────────
+  build-image:
+    name: "7 · Build OCI Image (Buildah) + Trivy + Sign"
+    runs-on: ubuntu-latest
+    needs: build-artifact
+    permissions:
+      id-token: write     # for OIDC → AWS STS + cosign keyless signing
+      contents: read
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
+      image_uri: ${{ steps.push.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: target/
+
+      - name: Configure AWS credentials (OIDC — no long-lived keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Rootless Buildah build ─────────────────────────────────────────────
+      - name: Build OCI image with Buildah (rootless)
+        id: build
+        run: |
+          IMAGE_TAG="${{ needs.validate.outputs.image_tag }}"
+          FULL_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+
+          buildah bud \
+            --layers \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            -t "${FULL_IMAGE}" .
+
+          echo "full_image=${FULL_IMAGE}" >> $GITHUB_OUTPUT
+
+      # ── Trivy image scan (CRITICAL = fail) ────────────────────────────────
+      - name: Container scan — Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build.outputs.full_image }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"          # fail on CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      # ── Generate SBOM ──────────────────────────────────────────────────────
+      - name: Generate SBOM (Syft — SPDX format)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.build.outputs.full_image }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      # ── Push to ECR via Skopeo (no pull/push cycle, digest-preserving) ────
+      - name: Push image to ECR with Skopeo
+        id: push
+        run: |
+          IMAGE="${{ steps.build.outputs.full_image }}"
+          skopeo copy \
+            --dest-creds "AWS:$(aws ecr get-login-password)" \
+            containers-storage:${IMAGE} \
+            docker://${IMAGE}
+
+          # Capture immutable digest
+          DIGEST=$(skopeo inspect --format '{{.Digest}}' docker://${IMAGE})
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+          echo "image_uri=${IMAGE}@${DIGEST}" >> $GITHUB_OUTPUT
+          echo "🐳 Pushed: ${IMAGE}@${DIGEST}"
+
+      # ── Sign image with cosign (keyless OIDC) ─────────────────────────────
+      - name: Sign image with cosign (keyless)
+        uses: sigstore/cosign-installer@v3
+
+      - name: Cosign sign + attach SBOM
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          IMAGE_URI="${{ steps.push.outputs.image_uri }}"
+          cosign sign --yes "${IMAGE_URI}"
+          cosign attach sbom --sbom sbom.spdx.json "${IMAGE_URI}"
+          cosign verify "${IMAGE_URI}" \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+          echo "✅ Image signed and verified"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 90      # long retention for compliance audit
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 8 — DEPLOY TO STAGING (GitOps: update manifest → ArgoCD syncs)
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: "8 · Deploy → Staging"
+    runs-on: ubuntu-latest
+    needs: build-image
+    environment:
+      name: staging
+      url: https://staging.myapp.internal
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update EKS kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }}-staging \
+            --region ${{ secrets.AWS_REGION }}
+
+      # Update GitOps manifest repo (ArgoCD watches this)
+      - name: Checkout GitOps manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update staging image digest in Helm values
+        run: |
+          IMAGE_DIGEST="${{ needs.build-image.outputs.image_digest }}"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          # Patch values-staging.yaml with immutable digest (never tag)
+          yq e -i \
+            ".image.repository = \"${IMAGE_URI}\" | .image.tag = \"\" | .image.digest = \"${IMAGE_DIGEST}\"" \
+            gitops/environments/staging/values.yaml
+
+          cd gitops
+          git config user.email "ci-bot@tapestry.internal"
+          git config user.name "CI Bot"
+          git add environments/staging/values.yaml
+          git commit -m "chore(staging): deploy ${{ github.sha }} — ${{ needs.validate.outputs.image_tag }}"
+          git push
+
+      - name: Wait for ArgoCD sync (staging)
+        run: |
+          # Poll ArgoCD API until app is Synced + Healthy
+          for i in {1..30}; do
+            STATUS=$(argocd app get my-java-app-staging \
+              --server ${{ secrets.ARGOCD_SERVER }} \
+              --auth-token ${{ secrets.ARGOCD_TOKEN }} \
+              -o json | jq -r '.status.sync.status + "/" + .status.health.status')
+            echo "ArgoCD status: ${STATUS}"
+            if [ "${STATUS}" = "Synced/Healthy" ]; then
+              echo "✅ Staging deployment healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ ArgoCD sync timeout" && exit 1
+
+      - name: Run smoke tests against staging
+        run: |
+          STAGING_URL="https://staging.myapp.internal"
+          # Health check
+          curl -sf "${STAGING_URL}/actuator/health" | jq '.status == "UP"'
+          # Basic API smoke test
+          curl -sf "${STAGING_URL}/api/v1/ping" | jq '.pong == true'
+          echo "✅ Smoke tests passed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 9 — DAST (Dynamic Application Security Testing) on staging
+# NIST 800-53: CA-8, SA-11
+# ─────────────────────────────────────────────────────────────────────────────
+  dast:
+    name: "9 · DAST — OWASP ZAP on Staging"
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.11.0
+        with:
+          target: "https://staging.myapp.internal"
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a"           # ajax spider for SPAs
+          fail_action: true           # FAIL on HIGH alerts
+          allow_issue_writing: true
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: report_html.html
+          retention-days: 30
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 10 — PERFORMANCE / LOAD TEST on staging
+# ─────────────────────────────────────────────────────────────────────────────
+  load-test:
+    name: "10 · Load Test (k6)"
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run k6 load test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/smoke.js
+          flags: --out json=results.json
+        env:
+          K6_TARGET_URL: https://staging.myapp.internal
+          K6_VUS: "50"
+          K6_DURATION: "2m"
+
+      - name: Check p99 latency threshold
+        run: |
+          P99=$(cat results.json | jq '[.[] | select(.type=="Point" and .metric=="http_req_duration") | .data.value] | sort | .[ (. | length * 0.99) | floor]')
+          echo "p99 latency: ${P99}ms"
+          if (( $(echo "$P99 > 500" | bc -l) )); then
+            echo "❌ p99 latency ${P99}ms exceeds 500ms threshold"
+            exit 1
+          fi
+          echo "✅ p99 latency within SLO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 11 — CHANGE REQUEST (Approval Gate for Production)
+# Formal change record for NIST CM-3 / CM-5 compliance.
+# Creates a tracked issue and notifies approvers.
+# Actual manual approval happens via GitHub Environment on deploy-production.
+# ─────────────────────────────────────────────────────────────────────────────
+  change-request:
+    name: "11 · Change Request (Approval Gate)"
+    runs-on: ubuntu-latest
+    needs: [dast, load-test]
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      change_id: ${{ steps.create_issue.outputs.issue_number }}
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download SBOM for change record
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+        continue-on-error: true
+
+      - name: Compile change request summary
+        id: summary
+        run: |
+          echo "### Change Request — v${{ needs.validate.outputs.version }}" > change-request.md
+          echo "" >> change-request.md
+          echo "**Application:** ${{ env.IMAGE_NAME }}" >> change-request.md
+          echo "**Version:** ${{ needs.validate.outputs.version }}" >> change-request.md
+          echo "**Image Tag:** ${{ needs.validate.outputs.image_tag }}" >> change-request.md
+          echo "**Image Digest:** ${{ needs.build-image.outputs.image_digest }}" >> change-request.md
+          echo "**Commit:** ${{ github.sha }}" >> change-request.md
+          echo "**Author:** ${{ github.actor }}" >> change-request.md
+          echo "**Branch:** ${{ github.ref }}" >> change-request.md
+          echo "" >> change-request.md
+          echo "### Pipeline Evidence" >> change-request.md
+          echo "- [Unit Tests & Coverage](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [Integration Tests](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [Security Scan (SAST + CVE)](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [SonarQube Quality Gate](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [DAST — ZAP Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [Load Test (k6)](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> change-request.md
+          echo "- [SBOM](sbom/sbom.spdx.json)" >> change-request.md
+          echo "" >> change-request.md
+          echo "### Risk Assessment" >> change-request.md
+          echo "- All security scans passed (no CRITICAL/HIGH findings)" >> change-request.md
+          echo "- Load test p99 latency within SLO (<500ms)" >> change-request.md
+          echo "- DAST baseline scan passed" >> change-request.md
+          echo "- Image signed with cosign (keyless)" >> change-request.md
+          echo "- SBOM attached for supply chain audit" >> change-request.md
+
+      - name: Create change request issue
+        id: create_issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_URL=$(gh issue create \
+            --title "Change Request: v${{ needs.validate.outputs.version }} to Production" \
+            --label "change-request,production" \
+            --body-file change-request.md \
+            --assignee ${{ github.actor }})
+          ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
+          echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
+          echo "✅ Change request created: $ISSUE_URL"
+
+      - name: Notify Slack — change request pending approval
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "📋 *Change Request #${{ steps.create_issue.outputs.issue_number }} — Pending Approval*",
+              "blocks": [{
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "📋 *Change Request #${{ steps.create_issue.outputs.issue_number }}*\n*${{ env.IMAGE_NAME }}* `v${{ needs.validate.outputs.version }}` → *Production*\n>Commit: `${{ github.sha }}`\n>Digest: `${{ needs.build-image.outputs.image_digest }}`\n>By: ${{ github.actor }}\n>Issue: <${{ github.server_url }}/${{ github.repository }}/issues/${{ steps.create_issue.outputs.issue_number }}|View change request>\n>Pipeline: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View pipeline>\n\n*Action required:* Approve in GitHub Environments to proceed with production deploy."
+                }
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 12 — PRODUCTION DEPLOY (Canary via Argo Rollouts)
+# Only on: main branch, after change request + manual approval
+# Requires: manual approval via GitHub Environment protection rule
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: "12 · Deploy → Production (Canary)"
+    runs-on: ubuntu-latest
+    needs: [dast, load-test, change-request]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production             # GitHub Environment = requires manual approval
+      url: https://myapp.tapestry.internal
+    steps:
+      - name: Configure AWS credentials (prod role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update EKS kubeconfig (prod)
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      # Update GitOps manifest — ArgoCD + Argo Rollouts handles canary
+      - name: Checkout GitOps manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update production image digest in Helm values
+        run: |
+          IMAGE_DIGEST="${{ needs.build-image.outputs.image_digest }}"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          yq e -i \
+            ".image.repository = \"${IMAGE_URI}\" | .image.tag = \"\" | .image.digest = \"${IMAGE_DIGEST}\"" \
+            gitops/environments/production/values.yaml
+
+          cd gitops
+          git config user.email "ci-bot@tapestry.internal"
+          git config user.name "CI Bot"
+          git add environments/production/values.yaml
+          git commit -m "chore(prod): deploy ${{ github.sha }} — ${{ needs.validate.outputs.image_tag }}" \
+                     -m "Approved by: ${{ github.actor }}"
+          git push
+
+      - name: Wait for canary phase 1 (5% traffic)
+        run: |
+          echo "⏳ Canary step 1: 5% traffic for 5 minutes..."
+          sleep 300
+          # Check Argo Rollout status
+          kubectl argo rollouts get rollout my-java-app \
+            -n production --watch --timeout 60s || true
+
+      - name: Verify error rate at canary 5%
+        run: |
+          # Query Prometheus for error rate during canary window
+          ERROR_RATE=$(curl -sf "${{ secrets.PROMETHEUS_URL }}/api/v1/query" \
+            --data-urlencode 'query=rate(http_requests_total{status=~"5..",app="my-java-app",version="canary"}[5m]) / rate(http_requests_total{app="my-java-app",version="canary"}[5m])' \
+            | jq -r '.data.result[0].value[1] // "0"')
+          echo "Canary error rate: ${ERROR_RATE}"
+          if (( $(echo "$ERROR_RATE > 0.01" | bc -l) )); then
+            echo "❌ Error rate ${ERROR_RATE} > 1% — aborting canary"
+            kubectl argo rollouts abort my-java-app -n production
+            exit 1
+          fi
+          echo "✅ Canary healthy — promoting to 100%"
+
+      - name: Promote canary to 100%
+        run: |
+          kubectl argo rollouts promote my-java-app -n production
+          kubectl argo rollouts status my-java-app -n production --timeout 5m
+          echo "✅ Production deployment complete"
+
+      - name: Tag release in Git
+        run: |
+          git tag -a "v${{ needs.validate.outputs.version }}" \
+            -m "Production release ${{ needs.validate.outputs.version }} — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin "v${{ needs.validate.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ needs.validate.outputs.version }}"
+          name: "Release v${{ needs.validate.outputs.version }}"
+          generate_release_notes: true
+          files: |
+            sbom.spdx.json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 13 — POST-DEPLOY VALIDATION + NOTIFY + CLOSE CHANGE REQUEST
+# ─────────────────────────────────────────────────────────────────────────────
+  post-deploy:
+    name: "13 · Post-Deploy Validation + Notify"
+    runs-on: ubuntu-latest
+    needs: [deploy-production, change-request]
+    if: always()
+    steps:
+      - name: Production health check
+        if: needs.deploy-production.result == 'success'
+        run: |
+          PROD_URL="https://myapp.tapestry.internal"
+          for i in {1..5}; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${PROD_URL}/actuator/health")
+            if [ "${STATUS}" = "200" ]; then
+              echo "✅ Production health check passed (attempt ${i})"
+              exit 0
+            fi
+            echo "⏳ Attempt ${i} returned ${STATUS} — retrying..."
+            sleep 15
+          done
+          echo "❌ Production health check failed after 5 attempts"
+          exit 1
+
+      - name: Close change request issue
+        if: needs.deploy-production.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ needs.change-request.outputs.change_id }} \
+            --comment "✅ Production deploy completed successfully. Change approved and deployed: v${{ needs.validate.outputs.version }} (digest: ${{ needs.build-image.outputs.image_digest }})"
+
+      - name: Notify Slack — success
+        if: needs.deploy-production.result == 'success'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ *Production deploy succeeded*",
+              "blocks": [{
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "✅ *${{ env.IMAGE_NAME }}* `v${{ needs.validate.outputs.version }}` deployed to production\n>Change Request: <${{ github.server_url }}/${{ github.repository }}/issues/${{ needs.change-request.outputs.change_id }}|#${{ needs.change-request.outputs.change_id }}>\n>Commit: `${{ github.sha }}`\n>By: ${{ github.actor }}\n>Run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View pipeline>"
+                }
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Close change request as failed on rollback
+        if: needs.deploy-production.result == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ needs.change-request.outputs.change_id }} \
+            --comment "❌ Production deploy failed. Change rejected and rolled back: v${{ needs.validate.outputs.version }}"
+
+      - name: Notify Slack — failure + rollback alert
+        if: needs.deploy-production.result == 'failure'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 *Production deploy FAILED — verify rollback*",
+              "blocks": [{
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "🚨 *${{ env.IMAGE_NAME }}* deploy failed at stage: `${{ needs.deploy-production.result }}`\n>Commit: `${{ github.sha }}`\n>By: ${{ github.actor }}\n>*Action required: verify ArgoCD rollback completed*\n>Run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View pipeline>"
+                }
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Create PagerDuty incident on failure
+        if: needs.deploy-production.result == 'failure'
+        uses: PagerDuty/pagerduty-action@v1
+        with:
+          pagerduty-integration-key: ${{ secrets.PAGERDUTY_INTEGRATION_KEY }}
+          pagerduty-dedup-key: "deploy-failure-${{ github.sha }}"
+          pagerduty-description: "Production deploy failed: ${{ env.IMAGE_NAME }} ${{ needs.validate.outputs.version }}"
+          pagerduty-severity: critical

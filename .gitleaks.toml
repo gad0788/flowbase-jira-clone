@@ -1,0 +1,9 @@
+title = "Gitleaks config for tapestry-java-app"
+
+[allowlist]
+description = "Known safe strings and test values"
+paths = [
+    "(?i)test",
+    "(?i).*_test\\.go",
+    "(?i).*\\.test\\.java",
+]

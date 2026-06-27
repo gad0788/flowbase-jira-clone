@@ -1,0 +1,5 @@
+# ZAP alert rules configuration
+# Format: rule_id    action    (IGNORE, FAIL, WARN)
+# FAIL on HIGH severity security findings
+100000	FAIL	# Directory Browsing
+100001	FAIL	# Source Code Disclosure

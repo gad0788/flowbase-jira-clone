@@ -1,9 +1,13 @@
+jwt:
+  secret: ${JWT_SECRET:4a6f686e446f655365637265745665727957686f4c697665734174546865426f74746f6d4f665468654f6365616e}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
 server:
   port: 8080
 
 spring:
   application:
-    name: tapestry-java-app
+    name: flowbase-java-app
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
   autoconfigure:
@@ -25,7 +29,7 @@ management:
 logging:
   level:
     root: INFO
-    com.tapestry.javaapp: INFO
+    com.flowbase.jira: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

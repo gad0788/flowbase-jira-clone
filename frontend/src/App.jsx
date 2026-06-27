@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
 import IssueDetail from './pages/IssueDetail';
 import CreateIssue from './pages/CreateIssue';
 import Sprints from './pages/Sprints';
+import Login from './pages/Login';
+import Register from './pages/Register';
 import { get } from './api';
 import './App.css';
 
@@ -66,6 +68,11 @@ export default function App() {
   const navigate = useNavigate();
   const showSidebar = !location.pathname.match(/^\/(login|register)/);
   const debounceRef = useRef(null);
+  const [user, setUser] = useState(() => {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  });
+  const [token] = useState(() => localStorage.getItem('token'));
 
   useEffect(() => {
     const handler = (e) => {
@@ -130,7 +137,7 @@ export default function App() {
       if (keyMatch) {
         get(`/issues/key/${search.toUpperCase()}`)
           .then(issue => {
-            navigate(`/projects/${issue.project.id}/issues/${issue.id}`);
+            navigate(`/projects/${issue.projectId}/issues/${issue.id}`);
             setSearch('');
             setShowResults(false);
           })
@@ -144,17 +151,34 @@ export default function App() {
   };
 
   const goToIssue = (issue) => {
-    navigate(`/projects/${issue.project.id}/issues/${issue.id}`);
+    navigate(`/projects/${issue.projectId}/issues/${issue.id}`);
     setSearch('');
     setShowResults(false);
   };
+
+  const signOut = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null);
+    navigate('/login');
+  };
+
+  if (!token) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <div className="app">
       <header className="header-bar">
         <div className="logo">
           <JiraIcon />
-          <Link to="/">Tapestry Jira</Link>
+          <Link to="/">Flowbase Jira</Link>
         </div>
         <nav>
           <Link to="/" className={location.pathname === '/' ? 'active' : ''}>Dashboard</Link>
@@ -194,7 +218,7 @@ export default function App() {
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: '#172b4d', marginTop: 2 }}>{searchResults[0].issue.summary}</div>
-                  <div style={{ fontSize: 11, color: '#8993a4', marginTop: 2 }}>{searchResults[0].issue.project.name}</div>
+                  <div style={{ fontSize: 11, color: '#8993a4', marginTop: 2 }}>{searchResults[0].issue.projectId}</div>
                 </div>
               ) : (
                 searchResults.map(issue => (
@@ -217,7 +241,12 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="user-avatar" title="Admin User">A</div>
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="user-avatar" title={user.displayName}>{user.displayName.charAt(0)}</div>
+            <button onClick={signOut} className="sign-out-btn">Sign out</button>
+          </div>
+        )}
       </header>
 
       {showSidebar && <Sidebar />}
@@ -229,13 +258,14 @@ export default function App() {
           <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
           <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
           <Route path="/projects/:id/sprints" element={<Sprints />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
         </Routes>
       </main>
     </div>
   );
 }
 
-// Wrap with BrowserRouter
 export function WrappedApp() {
   return (
     <BrowserRouter>

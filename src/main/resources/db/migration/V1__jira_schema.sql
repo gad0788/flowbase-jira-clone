@@ -3,6 +3,7 @@ CREATE TABLE users (
     display_name VARCHAR(255) NOT NULL,
     email_address VARCHAR(255) NOT NULL,
     avatar_url VARCHAR(512),
+    password VARCHAR(255),
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()

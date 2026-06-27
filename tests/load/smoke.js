@@ -10,7 +10,7 @@ export const options = {
     },
 };
 
-const BASE_URL = __ENV.K6_TARGET_URL || 'https://staging.myapp.internal';
+const BASE_URL = __ENV.K6_TARGET_URL || 'http://localhost:8080';
 
 export default function () {
     const responses = http.batch([

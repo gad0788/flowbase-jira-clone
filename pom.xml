@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.tapestry</groupId>
+    <groupId>com.flowbase</groupId>
     <artifactId>java-app</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
-    <name>tapestry-java-app</name>
+    <name>flowbase-java-app</name>
     <description>Production Java application with DevSecOps pipeline</description>
 
     <properties>
@@ -39,14 +39,14 @@
         <jacoco.minimum.branch-coverage>0.75</jacoco.minimum.branch-coverage>
 
         <!-- Sonar -->
-        <sonar.projectKey>tapestry-java-app</sonar.projectKey>
-        <sonar.organization>tapestry</sonar.organization>
+        <sonar.projectKey>flowbase-java-app</sonar.projectKey>
+        <sonar.organization>flowbase</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.qualitygate.wait>true</sonar.qualitygate.wait>
 
         <!-- Nexus -->
-        <nexus.url>https://nexus.tapestry.internal/repository/maven-releases</nexus.url>
+        <nexus.url>https://nexus.example.com/repository/maven-releases</nexus.url>
     </properties>
 
     <dependencies>
@@ -77,6 +77,29 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
             <scope>runtime</scope>
         </dependency>
 
@@ -163,9 +186,9 @@
                 <version>${jacoco.version}</version>
                 <configuration>
                     <excludes>
-                        <exclude>com/tapestry/javaapp/dto/**</exclude>
-                        <exclude>com/tapestry/javaapp/model/**</exclude>
-                        <exclude>com/tapestry/javaapp/config/**</exclude>
+                        <exclude>com/flowbase/jira/dto/**</exclude>
+                        <exclude>com/flowbase/jira/model/**</exclude>
+                        <exclude>com/flowbase/jira/config/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>

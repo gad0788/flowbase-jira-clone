@@ -1,6 +1,6 @@
-# Tapestry Jira — Java DevSecOps Pipeline
+# Flowbase Jira — Java DevSecOps Pipeline
 
-A full-featured Jira clone built with Spring Boot 3.3.5 (Java 21) and React 19, instrumented with a complete DevSecOps pipeline (Checkstyle, JaCoCo, SpotBugs, OWASP Dependency Check, ZAP, Gitleaks, SonarQube).
+A full-featured Jira clone built with Spring Boot 3.3.5 (Java 21) and React 19, with user registration/authentication and a DevSecOps pipeline (Checkstyle, JaCoCo, SpotBugs, OWASP Dependency Check, ZAP, Gitleaks, SonarQube).
 
 ## Features
 
@@ -123,6 +123,7 @@ All endpoints are under `/api/v1/`.
 
 | Resource   | Key endpoints                                   |
 |------------|-------------------------------------------------|
+| Auth       | `POST /auth/register`, `POST /auth/login`       |
 | Projects   | `GET/POST /projects`, `GET/PUT/DELETE /projects/{id}` |
 | Issues     | `GET/POST /issues`, `GET/PUT/DELETE /issues/{id}`, `POST /issues/{id}/transitions` |
 | Sprints    | `GET/POST /sprints`, `GET /sprints/project/{projectId}` |
@@ -136,11 +137,11 @@ All endpoints are under `/api/v1/`.
 
 On startup the app seeds 3 users:
 
-| User            | Email                 |
-|-----------------|-----------------------|
-| Admin User      | admin@tapestry.com    |
-| Developer       | dev@tapestry.com      |
-| Product Manager | pm@tapestry.com       |
+| User            | Email                 | Password  |
+|-----------------|-----------------------|-----------|
+| Admin User      | admin@flowbase.com    | password  |
+| Developer       | dev@flowbase.com      | password  |
+| Product Manager | pm@flowbase.com       | password  |
 
 ## DevSecOps Pipeline
 
@@ -160,7 +161,7 @@ The CI/CD (disabled by default as `.github/workflows/ci-cd.yml.disabled`) runs:
 
 ```
 java-pipeline/
-├── src/main/java/com/tapestry/javaapp/
+├── src/main/java/com/flowbase/jira/
 │   ├── config/          # Spring config, exception handler, data seeder
 │   ├── controller/      # REST controllers (10 endpoints)
 │   ├── dto/             # Request/response DTOs

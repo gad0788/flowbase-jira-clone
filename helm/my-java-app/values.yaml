@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: 123456789012.dkr.ecr.us-gov-west-1.amazonaws.com/my-java-app
+  repository: your-account.dkr.ecr.your-region.amazonaws.com/my-java-app
   tag: ""
   digest: ""
   pullPolicy: IfNotPresent
@@ -41,7 +41,7 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: nginx
   hosts:
-    - host: myapp.tapestry.internal
+    - host: jira.example.com
       paths:
         - path: /
           pathType: Prefix

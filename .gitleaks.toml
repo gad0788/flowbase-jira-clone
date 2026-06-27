@@ -1,4 +1,4 @@
-title = "Gitleaks config for tapestry-java-app"
+title = "Gitleaks config for flowbase-java-app"
 
 [allowlist]
 description = "Known safe strings and test values"

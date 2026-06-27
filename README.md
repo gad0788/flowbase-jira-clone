@@ -142,7 +142,9 @@ Visit **http://localhost:3000** in your browser.
 docker compose down
 ```
 
-To delete all data and start fresh:
+Your data is **persisted** across stop/restart in a Docker volume. It survives `docker compose down` and `docker compose stop`.
+
+To delete all data and start fresh (⚠️ **deletes everything**):
 ```bash
 docker compose down -v
 ```

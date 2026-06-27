@@ -73,49 +73,118 @@ erDiagram
     User ||--o{ Comment : authored
 ```
 
-## Quick Start
+## Prerequisites (Required)
 
-### Prerequisites
+Before running this app, ensure you have the following installed:
 
-- Java 21+
-- Node.js 20+
-- Docker Desktop (for PostgreSQL)
-- Maven (or use `./mvnw`)
+| Tool | Version | Why | Check Command |
+|------|---------|-----|---------------|
+| **Docker Desktop** | Latest | Runs PostgreSQL database + builds containers | `docker --version` |
+| **Git** | Latest | Clone the repository | `git --version` |
 
-### Option 1: Docker Compose (recommended)
+> **Note:** No need to install Java, Node.js, or Maven separately — the Docker build handles everything. You only need Docker Desktop.
+
+## Quick Start (Docker Compose — Recommended)
+
+This is the easiest way to run the full app. Docker builds everything for you.
+
+### Step 1: Clone the repository
+
+```bash
+git clone <repo-url>
+cd java-pipeline
+```
+
+### Step 2: Start all services
 
 ```bash
 docker compose up -d --build
 ```
 
-Opens at **http://localhost:3000**.
+This builds and starts 3 containers:
 
-| Container | Port  | Purpose              |
-|-----------|-------|----------------------|
-| postgres  | 5432  | PostgreSQL database  |
-| backend   | 8080  | Spring Boot API      |
-| frontend  | 80 → 3000 | Nginx serving React |
+| Container | Port  | Purpose                 |
+|-----------|-------|-------------------------|
+| postgres  | 5432  | PostgreSQL 16 database  |
+| backend   | 8080  | Spring Boot 3.3.5 API   |
+| frontend  | 80 → 3000 | Nginx serving React app |
 
-### Option 2: Local development
+### Step 3: Open the app
 
-**Terminal 1 — Database:**
+Visit **http://localhost:3000** in your browser.
+
+### Step 4: Create your account or use seed data
+
+**Option A — Create a new account:**
+1. Click "Create one" on the sign-in page
+2. Enter your name, email, and password (min 6 characters)
+3. You'll be logged in automatically and redirected to the dashboard
+
+**Option B — Use pre-seeded users:**
+
+| Email                 | Password  | Role             |
+|-----------------------|-----------|------------------|
+| admin@flowbase.com    | password  | Admin User       |
+| dev@flowbase.com      | password  | Developer        |
+| pm@flowbase.com       | password  | Product Manager  |
+
+### Step 5: Start using the app
+
+1. Click **Projects** in the header to see the dashboard
+2. Create a project (it gets an auto-generated key like `PROJ`)
+3. Create issues (Epic, Story, Task, Bug, or Sub-task)
+4. Drag and drop cards on the Kanban board
+5. Search by issue key (`PROJ-101`) or text in the search bar
+
+### Stopping the app
+
+```bash
+docker compose down
+```
+
+To delete all data and start fresh:
+```bash
+docker compose down -v
+```
+
+## Option 2: Local Development (without Docker)
+
+Use this if you want to edit code with hot-reload. Requires manual setup.
+
+### Prerequisites for local dev
+
+| Tool      | Version | Check Command      |
+|-----------|---------|---------------------|
+| Java      | 21+     | `java -version`    |
+| Node.js   | 20+     | `node --version`   |
+| Maven     | 3.9+    | `mvn --version`    |
+| Docker    | Latest  | `docker --version` (for PostgreSQL only) |
+
+### Step 1: Start the database
+
 ```bash
 docker run -d --name jira-postgres \
   -e POSTGRES_DB=jira -e POSTGRES_USER=jira -e POSTGRES_PASSWORD=jira \
   -p 5432:5432 postgres:16-alpine
 ```
 
-**Terminal 2 — Backend:**
+### Step 2: Start the backend
+
 ```bash
 ./mvnw spring-boot:run
 ```
-API at **http://localhost:8080**.
+The API is at **http://localhost:8080**.
 
-**Terminal 3 — Frontend:**
+### Step 3: Start the frontend
+
+In a new terminal:
+
 ```bash
-cd frontend && npm install && npm run dev
+cd frontend
+npm install
+npm run dev
 ```
-UI at **http://localhost:3000** (Vite proxies `/api` to `:8080`).
+The UI is at **http://localhost:3000** (Vite proxies `/api` to `:8080`).
 
 ## API Overview
 

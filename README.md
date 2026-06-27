@@ -146,6 +146,60 @@ Visit **http://localhost:3000** in your browser.
 | **Stop & remove containers** | `docker compose down` | Preserved |
 | **Fresh start** (⚠️ deletes all data) | `docker compose down -v && docker compose up -d --build` | Wiped |
 
+## AI Integration via MCP (Model Context Protocol)
+
+An MCP server is included at `mcp-server/` that exposes the Jira API as tools an AI assistant (Claude, Cursor, etc.) can call directly.
+
+### Start the MCP server
+
+```bash
+cd mcp-server && npm start
+```
+
+The server connects to `http://localhost:8080` by default (configure via `JIRA_URL` env var). It authenticates as `admin@flowbase.com` (configure via `JIRA_EMAIL` / `JIRA_PASSWORD` env vars).
+
+### Available AI tools
+
+| Tool | What it does |
+|------|-------------|
+| `jira_login` | Authenticate with email/password |
+| `jira_list_projects` | List all projects |
+| `jira_get_project` | Get project details |
+| `jira_create_project` | Create a new project |
+| `jira_list_issues_by_project` | List issues in a project |
+| `jira_list_issues_by_sprint` | List issues in a sprint |
+| `jira_get_issue` | Get issue details |
+| `jira_create_issue` | Create an issue (TASK, BUG, STORY, EPIC, SUB_TASK) |
+| `jira_update_issue` | Update an existing issue |
+| `jira_delete_issue` | Delete an issue |
+| `jira_transition_issue` | Change issue status (BACKLOG → TO_DO → IN_PROGRESS → IN_REVIEW → DONE) |
+| `jira_list_sprints` | List sprints for a project |
+| `jira_create_sprint` | Create a new sprint |
+| `jira_list_comments` | List comments on an issue |
+| `jira_add_comment` | Add a comment to an issue |
+| `jira_list_users` | List all users |
+| `jira_list_labels` | List all labels |
+
+### Claude Desktop configuration
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "flowbase-jira": {
+      "command": "node",
+      "args": ["path/to/mcp-server/index.js"],
+      "env": {
+        "JIRA_URL": "http://localhost:8080",
+        "JIRA_EMAIL": "admin@flowbase.com",
+        "JIRA_PASSWORD": "password"
+      }
+    }
+  }
+}
+```
+
 ## Option 2: Local Development (without Docker)
 
 Use this if you want to edit code with hot-reload. Requires manual setup.

@@ -179,6 +179,34 @@ All under `/api/v1/`.
 2. Add `<Route>` in `frontend/src/App.jsx`
 3. Add nav link if needed
 
+## MCP Server (AI Tool Integration)
+
+An MCP server is in `mcp-server/` that exposes the Jira API as AI-callable tools. It uses stdio transport for integration with Claude Desktop, Cursor, and other MCP-compatible AI tools.
+
+### 17 available tools
+
+- `jira_login` — authenticate with email/password
+- `jira_list_projects` / `jira_get_project` / `jira_create_project` — project CRUD
+- `jira_list_issues_by_project` / `jira_list_issues_by_sprint` / `jira_get_issue` — issue queries
+- `jira_create_issue` / `jira_update_issue` / `jira_delete_issue` / `jira_transition_issue` — issue CRUD + workflow
+- `jira_list_sprints` / `jira_create_sprint` — sprint management
+- `jira_list_comments` / `jira_add_comment` — comments
+- `jira_list_users` / `jira_list_labels` — reference data
+
+### API field conventions for MCP tools
+
+| Field | Enum values |
+|-------|-------------|
+| `issueType` | `TASK`, `BUG`, `STORY`, `EPIC`, `SUB_TASK` |
+| `priority` | `LOWEST`, `LOW`, `MEDIUM`, `HIGH`, `HIGHEST` |
+| `status` (transitions) | `BACKLOG`, `TO_DO`, `IN_PROGRESS`, `IN_REVIEW`, `DONE`, `CANCELLED` |
+
+### Required fields for create/update
+
+- **Create issue**: `projectId`, `summary`, `issueType`, `reporterId` (defaults to 1 = admin)
+- **Add comment**: `issueId`, `body`, `authorId` (defaults to 1 = admin)
+- **Transition issue**: `id`, `status`, `userId` (defaults to 1 = admin)
+
 ## State of the Project
 
 - All 31 unit tests pass
@@ -186,4 +214,5 @@ All under `/api/v1/`.
 - Auth: registration, login, JWT-protected endpoints
 - Sensitive/internal data removed for open source
 - CI/CD pipeline disabled (`.github/workflows/` deleted)
+- MCP server built and tested: create issues, add comments, transition status all verified
 - Ready for `git clone && docker compose up -d --build`

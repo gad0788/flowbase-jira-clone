@@ -136,18 +136,15 @@ Visit **http://localhost:3000** in your browser.
 4. Drag and drop cards on the Kanban board
 5. Search by issue key (`PROJ-101`) or text in the search bar
 
-### Stopping the app
+### Command Quick Reference
 
-```bash
-docker compose down
-```
-
-Your data is **persisted** across stop/restart in a Docker volume. It survives `docker compose down` and `docker compose stop`.
-
-To delete all data and start fresh (⚠️ **deletes everything**):
-```bash
-docker compose down -v
-```
+| Action | Command | Data |
+|--------|---------|------|
+| **Start** (first time) | `docker compose up -d --build` | Creates fresh DB |
+| **Start** (after stop) | `docker compose start` | Preserved |
+| **Stop** (safe) | `docker compose stop` | Preserved |
+| **Stop & remove containers** | `docker compose down` | Preserved |
+| **Fresh start** (⚠️ deletes all data) | `docker compose down -v && docker compose up -d --build` | Wiped |
 
 ## Option 2: Local Development (without Docker)
 

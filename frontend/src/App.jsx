@@ -190,7 +190,8 @@ export default function App() {
         </div>
         <nav>
           <Link to="/" className={location.pathname === '/' ? 'active' : ''}>Dashboard</Link>
-          <a href="#" onClick={e => e.preventDefault()} className={location.pathname.includes('/projects/') ? 'active' : ''}>Projects</a>
+          <Link to="/" className={location.pathname.includes('/projects/') ? 'active' : ''}>Projects</Link>
+          <Link to="/" className={location.pathname.includes('/projects/') ? 'active' : ''}>Kanban Board</Link>
         </nav>
         <div className="search-box" ref={searchRef} style={{ position: 'relative' }}>
           <span style={{ opacity: 0.5, marginRight: 6 }}>

@@ -73,6 +73,16 @@ export default function App() {
     return u ? JSON.parse(u) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('token'));
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
   const handleAuth = () => {
     const t = localStorage.getItem('token');
@@ -253,6 +263,9 @@ export default function App() {
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{user.email}</span>
+            <button className="theme-toggle" onClick={() => setDark(!dark)} title={dark ? 'Light mode' : 'Dark mode'}>
+              {dark ? '☀️' : '🌙'}
+            </button>
             <div className="user-avatar" title={user.email}>{user.displayName.charAt(0)}</div>
             <button onClick={signOut} className="sign-out-btn">Sign out</button>
           </div>

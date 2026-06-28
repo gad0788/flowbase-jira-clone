@@ -7,8 +7,8 @@ A full-featured Jira clone built with Spring Boot 3.3.5 (Java 21) and React 19, 
 **Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (latest) + Git.
 
 ```bash
-git clone https://github.com/gad0788/flowbase-jira-clone.git
-cd java-pipeline
+git clone https://github.com/gad0788/flowbase-jira-clone.git flowbase-jra-board
+cd flowbase-jra-board
 docker compose up -d --build
 ```
 
@@ -239,7 +239,7 @@ The CI/CD (disabled by default as `.github/workflows/ci-cd.yml.disabled`) runs:
 ## Project Structure
 
 ```
-java-pipeline/
+flowbase-jra-board/
 ├── src/main/java/com/flowbase/jira/
 │   ├── config/          # Spring config, exception handler, data seeder
 │   ├── controller/      # REST controllers (10 endpoints)

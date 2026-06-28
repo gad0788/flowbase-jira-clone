@@ -21,7 +21,59 @@ function JiraIcon() {
   );
 }
 
-function Sidebar() {
+function NavGroup({ title, icon, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="nav-group">
+      <div className="nav-group-header" onClick={() => setOpen(!open)}>
+        <span className={`chevron ${open ? 'open' : ''}`}>▶</span>
+        {icon && <span className="icon">{icon}</span>}
+        <span>{title}</span>
+      </div>
+      {open && <div className="nav-group-content">{children}</div>}
+    </div>
+  );
+}
+
+function ProfileDropdown({ user, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="profile-trigger" ref={ref} onClick={() => setOpen(!open)}>
+      <span className="profile-avatar">{user.displayName.charAt(0)}</span>
+      <span className="profile-name">{user.displayName}</span>
+      {open && (
+        <div className="dropdown-menu" onClick={e => e.stopPropagation()}>
+          <div className="dropdown-header">
+            <div className="name">{user.displayName}</div>
+            <div className="email">{user.email}</div>
+          </div>
+          <div className="dropdown-body">
+            <button className="dropdown-item" onClick={() => setOpen(false)}>
+              <span>👤</span> Profile
+            </button>
+            <button className="dropdown-item" onClick={() => setOpen(false)}>
+              <span>⚙️</span> Settings
+            </button>
+            <div className="dropdown-divider" />
+            <button className="dropdown-item danger" onClick={onSignOut}>
+              <span>🚪</span> Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sidebar({ open }) {
   const location = useLocation();
   const [projects, setProjects] = useState([]);
   const currentProjectId = location.pathname.match(/\/projects\/(\d+)/)?.[1];
@@ -31,30 +83,61 @@ function Sidebar() {
   const projectColors = ['#0052cc', '#00875a', '#de350b', '#ff8b00', '#6942b5', '#00b8d9'];
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-section">
-        <h4>Projects</h4>
-        <Link to="/" className={`sidebar-link ${location.pathname === '/' ? 'active' : ''}`}>
-          <span className="icon">📊</span> Dashboard
-        </Link>
-      </div>
-      <div className="sidebar-section">
-        <h4>Recent Projects</h4>
-        {projects.map((p, i) => (
-          <Link
-            key={p.id}
-            to={`/projects/${p.id}`}
-            className={`sidebar-link ${String(p.id) === currentProjectId ? 'active' : ''}`}
-          >
-            <span className="project-avatar" style={{ background: projectColors[i % projectColors.length] }}>
-              {p.key.charAt(0)}
-            </span>
-            <span className="truncate">{p.name}</span>
+    <aside className={`sidebar ${!open ? 'closed' : ''}`}>
+      <div className="sidebar-scroll">
+        <NavGroup title="Dashboard" icon="📊" defaultOpen={true}>
+          <Link to="/" className={`sidebar-link ${location.pathname === '/' ? 'active' : ''}`}>
+            <span className="icon" style={{ marginLeft: 0 }}>📋</span> All Projects
           </Link>
-        ))}
-        {projects.length === 0 && (
-          <span style={{ fontSize: 12, color: '#8993a4', padding: '0 12px' }}>No projects yet</span>
-        )}
+        </NavGroup>
+
+        {currentProjectId && (() => {
+          const project = projects.find(p => String(p.id) === currentProjectId);
+          return (
+            <>
+              <NavGroup title="Planning" icon="📅" defaultOpen={true}>
+                <Link
+                  to={`/projects/${currentProjectId}/sprints`}
+                  className={`sidebar-link ${location.pathname.includes('/sprints') ? 'active' : ''}`}
+                >
+                  <span className="icon" style={{ marginLeft: 0 }}>🏃</span> Sprints
+                </Link>
+              </NavGroup>
+              <NavGroup title="Development" icon="⚡" defaultOpen={true}>
+                <Link
+                  to={`/projects/${currentProjectId}`}
+                  className={`sidebar-link ${location.pathname.match(/\/projects\/\d+$/) ? 'active' : ''}`}
+                >
+                  <span className="icon" style={{ marginLeft: 0 }}>📋</span> Board
+                </Link>
+                <Link
+                  to={`/projects/${currentProjectId}/issues/new`}
+                  className={`sidebar-link ${location.pathname.includes('/issues/new') ? 'active' : ''}`}
+                >
+                  <span className="icon" style={{ marginLeft: 0 }}>➕</span> Create Issue
+                </Link>
+              </NavGroup>
+            </>
+          );
+        })()}
+
+        <NavGroup title="Projects" icon="📁" defaultOpen={true}>
+          {projects.map((p, i) => (
+            <Link
+              key={p.id}
+              to={`/projects/${p.id}`}
+              className={`sidebar-link ${String(p.id) === currentProjectId ? 'active' : ''}`}
+            >
+              <span className="project-avatar" style={{ background: projectColors[i % projectColors.length] }}>
+                {p.key.charAt(0)}
+              </span>
+              <span className="truncate">{p.name}</span>
+            </Link>
+          ))}
+          {projects.length === 0 && (
+            <span style={{ fontSize: 12, color: '#8993a4', padding: '0 12px 0 32px' }}>No projects yet</span>
+          )}
+        </NavGroup>
       </div>
     </aside>
   );
@@ -65,11 +148,12 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [showResults, setShowResults] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const searchRef = useRef(null);
+  const debounceRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const showSidebar = !location.pathname.match(/^\/(login|register)/);
-  const debounceRef = useRef(null);
   const [user, setUser] = useState(() => {
     const u = localStorage.getItem('user');
     return u ? JSON.parse(u) : null;
@@ -196,15 +280,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="header-bar">
+        <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
+          {sidebarOpen ? '✕' : '☰'}
+        </button>
         <div className="logo">
           <JiraIcon />
           <Link to="/">Flowbase Jira</Link>
         </div>
-        <nav>
-          <Link to="/" className={location.pathname === '/' ? 'active' : ''}>Dashboard</Link>
-          <Link to="/" className={location.pathname.includes('/projects/') ? 'active' : ''}>Projects</Link>
-          <Link to="/" className={location.pathname.includes('/projects/') ? 'active' : ''}>Kanban Board</Link>
-        </nav>
         <div className="search-box" ref={searchRef} style={{ position: 'relative' }}>
           <span style={{ opacity: 0.5, marginRight: 6 }}>
             {searching ? '⏳' : '🔍'}
@@ -262,35 +344,34 @@ export default function App() {
             </div>
           )}
         </div>
-        {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{user.email}</span>
-            <button className="theme-toggle" onClick={() => setDark(!dark)} title={dark ? 'Light mode' : 'Dark mode'}>
-              {dark ? '☀️' : '🌙'}
-            </button>
-            <div className="user-avatar" title={user.email}>{user.displayName.charAt(0)}</div>
-            <button onClick={signOut} className="sign-out-btn">Sign out</button>
-          </div>
-        )}
+        <div className="header-right">
+          <button className="theme-toggle" onClick={() => setDark(!dark)} title={dark ? 'Light mode' : 'Dark mode'}>
+            {dark ? '☀️' : '🌙'}
+          </button>
+          {user && <ProfileDropdown user={user} onSignOut={signOut} />}
+        </div>
       </header>
 
-      {showSidebar && <Sidebar />}
-
-      <main className={`main-content ${!showSidebar ? 'wide' : ''}`}>
-        <ErrorBoundary>
-          <ToastProvider>
-            <Routes>
-              <Route path="/" element={<Dashboard search={search} />} />
-              <Route path="/projects/:id" element={<Board />} />
-              <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
-              <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
-              <Route path="/projects/:id/sprints" element={<Sprints />} />
-              <Route path="/login" element={<Login onAuth={handleAuth} />} />
-              <Route path="/register" element={<Register onAuth={handleAuth} />} />
-            </Routes>
-          </ToastProvider>
-        </ErrorBoundary>
-      </main>
+      {showSidebar && (
+        <div className="app-body">
+          <Sidebar open={sidebarOpen} />
+          <main className="main-content">
+            <ErrorBoundary>
+              <ToastProvider>
+                <Routes>
+                  <Route path="/" element={<Dashboard search={search} />} />
+                  <Route path="/projects/:id" element={<Board />} />
+                  <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
+                  <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
+                  <Route path="/projects/:id/sprints" element={<Sprints />} />
+                  <Route path="/login" element={<Login onAuth={handleAuth} />} />
+                  <Route path="/register" element={<Register onAuth={handleAuth} />} />
+                </Routes>
+              </ToastProvider>
+            </ErrorBoundary>
+          </main>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,36 @@
 
 A full-featured Jira clone built with Spring Boot 3.3.5 (Java 21) and React 19, with user registration/authentication and a DevSecOps pipeline (Checkstyle, JaCoCo, SpotBugs, OWASP Dependency Check, ZAP, Gitleaks, SonarQube).
 
+## Quick Start
+
+**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (latest) + Git.
+
+```bash
+git clone https://github.com/gad0788/flowbase-jira-clone.git
+cd java-pipeline
+docker compose up -d --build
+```
+
+Open **http://localhost:3000** and log in with `admin@flowbase.com` / `password`.
+
+| Container | Port  | Purpose |
+|-----------|-------|---------|
+| postgres  | 5432  | PostgreSQL 16 database |
+| backend   | 8080  | Spring Boot 3.3.5 API |
+| frontend  | 80 → 3000 | Nginx serving React app |
+
+**Other seed users:** `dev@flowbase.com` / `password`, `pm@flowbase.com` / `password`
+
+### Command Reference
+
+| Action | Command |
+|--------|---------|
+| Start (first time) | `docker compose up -d --build` |
+| Start (after stop) | `docker compose start` |
+| Stop (safe) | `docker compose stop` |
+| Stop & remove containers | `docker compose down` |
+| Fresh start (⚠️ wipes data) | `docker compose down -v && docker compose up -d --build` |
+
 ## Features
 
 - **Issue tracking** — Epics, Stories, Tasks, Bugs, Sub-tasks with custom workflows
@@ -24,12 +54,12 @@ A full-featured Jira clone built with Spring Boot 3.3.5 (Java 21) and React 19, 
 │ localhost:  │       │  (React +    │       │ (Spring    │
 │    3000     │◀──────│   Vite/Nginx)│◀──────│  Boot 8080)│
 └─────────────┘       └──────────────┘       └─────┬──────┘
-                                                    │
-                                                    ▼
-                                            ┌────────────┐
-                                            │ PostgreSQL │
-                                            │  :5432     │
-                                            └────────────┘
+                                                     │
+                                                     ▼
+                                             ┌────────────┐
+                                             │ PostgreSQL │
+                                             │  :5432     │
+                                             └────────────┘
 ```
 
 ### Data Flow
@@ -72,79 +102,6 @@ erDiagram
     User ||--o{ Issue : reported
     User ||--o{ Comment : authored
 ```
-
-## Prerequisites (Required)
-
-Before running this app, ensure you have the following installed:
-
-| Tool | Version | Why | Check Command |
-|------|---------|-----|---------------|
-| **Docker Desktop** | Latest | Runs PostgreSQL database + builds containers | `docker --version` |
-| **Git** | Latest | Clone the repository | `git --version` |
-
-> **Note:** No need to install Java, Node.js, or Maven separately — the Docker build handles everything. You only need Docker Desktop.
-
-## Quick Start (Docker Compose — Recommended)
-
-This is the easiest way to run the full app. Docker builds everything for you.
-
-### Step 1: Clone the repository
-
-```bash
-git clone <repo-url>
-cd java-pipeline
-```
-
-### Step 2: Start all services
-
-```bash
-docker compose up -d --build
-```
-
-This builds and starts 3 containers:
-
-| Container | Port  | Purpose                 |
-|-----------|-------|-------------------------|
-| postgres  | 5432  | PostgreSQL 16 database  |
-| backend   | 8080  | Spring Boot 3.3.5 API   |
-| frontend  | 80 → 3000 | Nginx serving React app |
-
-### Step 3: Open the app
-
-Visit **http://localhost:3000** in your browser.
-
-### Step 4: Create your account or use seed data
-
-**Option A — Create a new account:**
-1. Click "Create one" on the sign-in page
-2. Enter your name, email, and password (min 6 characters)
-3. You'll be logged in automatically and redirected to the dashboard
-
-**Option B — Use pre-seeded users:**
-
-| Email                 | Password  | Role             |
-|-----------------------|-----------|------------------|
-| admin@flowbase.com    | password  | Admin User       |
-| dev@flowbase.com      | password  | Developer        |
-| pm@flowbase.com       | password  | Product Manager  |
-
-### Step 5: Start using the app
-
-1. Click **Projects** in the header to see the dashboard
-2. Create a project (it gets an auto-generated key like `PROJ`)
-3. Create issues (Epic, Story, Task, Bug, or Sub-task)
-4. Drag and drop cards on the Kanban board
-5. Search by issue key (`PROJ-101`) or text in the search bar
-
-### Command Quick Reference
-
-| Action | Command | Data |
-|--------|---------|------|
-| **Start** (first time) | `docker compose up -d --build` | Creates fresh DB |
-| **Start** (after stop) | `docker compose start` | Preserved |
-| **Stop** (safe) | `docker compose stop` | Preserved |
-| **Stop & remove containers** | `docker compose down` | Preserved |
-| **Fresh start** (⚠️ deletes all data) | `docker compose down -v && docker compose up -d --build` | Wiped |
 
 ## AI Integration via MCP (Model Context Protocol)
 
@@ -294,7 +251,15 @@ java-pipeline/
 │   ├── db/migration/    # Flyway migrations
 │   └── application.yml  # Environment configs
 ├── frontend/            # React (Vite) single-page app
-│   ├── src/pages/       # Dashboard, Board, IssueDetail, CreateIssue, Sprints
+│   ├── src/
+│   │   ├── pages/       # Dashboard, Board, IssueDetail, CreateIssue, Sprints, Login, Register
+│   │   ├── App.jsx      # Main layout with sidebar, header, profile dropdown, search
+│   │   ├── App.css      # Design system, dark/light theme, layout
+│   │   ├── api.js       # Fetch wrapper with JWT auth
+│   │   ├── ErrorBoundary.jsx  # Catches render errors
+│   │   ├── ToastContext.jsx   # Global toast notifications
+│   │   ├── ConfirmModal.jsx   # Confirmation dialogs
+│   │   └── Skeleton.jsx       # Loading placeholders
 │   └── nginx.conf       # Nginx config for Docker deployment
 ├── helm/                # Kubernetes Helm chart
 ├── .github/workflows/   # CI/CD pipeline (disabled)

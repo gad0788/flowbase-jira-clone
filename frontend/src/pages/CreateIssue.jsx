@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { get, post } from '../api';
+import { useToast } from '../ToastContext';
 
 export default function CreateIssue() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const addToast = useToast();
   const [users, setUsers] = useState([]);
   const [sprints, setSprints] = useState([]);
   const [epics, setEpics] = useState([]);
-  const [toast, setToast] = useState(null);
   const [form, setForm] = useState({
     summary: '', description: '', issueType: 'TASK', priority: 'MEDIUM',
     assigneeId: '', sprintId: '', parentId: '', storyPoints: '', dueDate: '',
@@ -37,17 +38,15 @@ export default function CreateIssue() {
       if (form.dueDate) body.dueDate = form.dueDate;
 
       const issue = await post('/issues', body);
-      setToast({ msg: `Created ${issue.key}`, type: 'success' });
+      addToast(`Created ${issue.key}`);
       setTimeout(() => navigate(`/projects/${id}/issues/${issue.id}`), 500);
     } catch (err) {
-      setToast({ msg: err.message, type: 'error' });
+      addToast(err.message, 'error');
     }
   };
 
   return (
     <div>
-      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-
       <div className="detail-breadcrumb mb-16">
         <Link to="/">Dashboard</Link> / <Link to={`/projects/${id}`}>Board</Link> / <span>Create Issue</span>
       </div>

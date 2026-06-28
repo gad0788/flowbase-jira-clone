@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { get, post } from '../api';
+import { useToast } from '../ToastContext';
+import { SkeletonBoard } from '../Skeleton';
 
 const COLUMNS = ['BACKLOG', 'TO_DO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'];
 const STATUS_LABELS = { BACKLOG: 'Backlog', TO_DO: 'To Do', IN_PROGRESS: 'In Progress', IN_REVIEW: 'In Review', DONE: 'Done' };
@@ -65,6 +67,7 @@ export default function Board() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const addToast = useToast();
 
   useEffect(() => {
     Promise.all([get(`/projects/${id}`), get(`/issues/project/${id}`)])
@@ -76,7 +79,7 @@ export default function Board() {
     try {
       const updated = await post(`/issues/${issueId}/transitions`, { status, userId: 1 });
       setIssues(issues.map(i => i.id === issueId ? updated : i));
-    } catch (err) { alert('Failed: ' + err.message); }
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const onDragOver = (e, status) => {
@@ -94,7 +97,14 @@ export default function Board() {
     } catch {}
   };
 
-  if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div><h3>Loading board...</h3></div>;
+  if (loading) return (
+    <div>
+      <div className="skeleton" style={{ height: 14, width: 200, marginBottom: 16 }} />
+      <div className="skeleton skeleton-text-lg" style={{ width: 300, marginBottom: 4 }} />
+      <div className="skeleton skeleton-text-sm" style={{ width: 150, marginBottom: 24 }} />
+      <SkeletonBoard />
+    </div>
+  );
   if (!project) return <div className="empty-state"><div className="empty-icon">⚠️</div><h3>Project not found</h3></div>;
 
   return (
@@ -114,7 +124,14 @@ export default function Board() {
       </div>
 
       <div className="board">
-        {COLUMNS.map(status => {
+        {issues.length === 0 ? (
+          <div className="empty-state" style={{ gridColumn: '1 / -1', padding: 48 }}>
+            <div className="empty-icon">📝</div>
+            <h3>No issues yet</h3>
+            <p>Create the first issue for {project.name} to start tracking work.</p>
+            <Link to={`/projects/${id}/issues/new`} className="btn btn-lg">+ Create Issue</Link>
+          </div>
+        ) : COLUMNS.map(status => {
           const colIssues = issues.filter(i => i.status === status);
           return (
             <div

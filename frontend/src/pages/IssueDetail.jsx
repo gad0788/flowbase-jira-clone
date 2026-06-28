@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { get, post, put, del } from '../api';
+import { useToast } from '../ToastContext';
+import { useConfirm } from '../ConfirmModal';
+import { SkeletonDetail } from '../Skeleton';
 
 const PRIORITY_ICONS = { HIGHEST: '▲', HIGH: '↑', MEDIUM: '◆', LOW: '↓', LOWEST: '▼' };
 
@@ -17,7 +20,8 @@ export default function IssueDetail() {
   const [sprints, setSprints] = useState([]);
   const [epics, setEpics] = useState([]);
   const [childIssues, setChildIssues] = useState([]);
-  const [toast, setToast] = useState(null);
+  const addToast = useToast();
+  const { confirm, modal: confirmModal } = useConfirm();
 
   useEffect(() => {
     Promise.all([
@@ -31,11 +35,6 @@ export default function IssueDetail() {
       });
     }).finally(() => setLoading(false));
   }, [issueId, id]);
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const [editForm, setEditForm] = useState({});
   useEffect(() => {
@@ -66,8 +65,8 @@ export default function IssueDetail() {
       const updated = await put(`/issues/${issueId}`, body);
       setIssue(updated);
       setEditing(false);
-      showToast('Issue updated successfully');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast('Issue updated successfully');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const linkEpic = async (parentId) => {
@@ -83,16 +82,16 @@ export default function IssueDetail() {
       };
       const updated = await put(`/issues/${issueId}`, body);
       setIssue(updated);
-      showToast(parentId ? 'Linked to epic' : 'Unlinked from epic');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast(parentId ? 'Linked to epic' : 'Unlinked from epic');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const transition = async (status) => {
     try {
       const updated = await post(`/issues/${issueId}/transitions`, { status, userId: 1 });
       setIssue(updated);
-      showToast(`Moved to ${status.replace('_', ' ')}`);
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast(`Moved to ${status.replace('_', ' ')}`);
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const addComment = async (e) => {
@@ -101,19 +100,20 @@ export default function IssueDetail() {
       const c = await post(`/issues/${issueId}/comments`, { body: commentBody, authorId: 1 });
       setComments([...comments, c]);
       setCommentBody('');
-      showToast('Comment added');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast('Comment added');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
-  const deleteIssue = async () => {
-    if (!confirm('Delete this issue?')) return;
-    try {
-      await del(`/issues/${issueId}`);
-      navigate(`/projects/${id}`);
-    } catch (err) { showToast(err.message, 'error'); }
+  const deleteIssue = () => {
+    confirm('Delete this issue? This action cannot be undone.', async () => {
+      try {
+        await del(`/issues/${issueId}`);
+        navigate(`/projects/${id}`);
+      } catch (err) { addToast(err.message, 'error'); }
+    });
   };
 
-  if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div><h3>Loading issue...</h3></div>;
+  if (loading) return <SkeletonDetail />;
   if (!issue) return <div className="empty-state"><div className="empty-icon">⚠️</div><h3>Issue not found</h3></div>;
 
   const TRANSITIONS = {
@@ -127,7 +127,7 @@ export default function IssueDetail() {
 
   return (
     <div>
-      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+      {confirmModal}
 
       <div className="detail-breadcrumb mb-8">
         <Link to="/">Dashboard</Link> / <Link to={`/projects/${id}`}>{issue.project.name}</Link> / <span>{issue.key}</span>

@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { get, post } from '../api';
+import { useToast } from '../ToastContext';
 
 export default function Sprints() {
   const { id } = useParams();
+  const addToast = useToast();
   const [sprints, setSprints] = useState([]);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     Promise.all([get(`/projects/${id}`), get(`/sprints/project/${id}`)])
@@ -17,25 +18,20 @@ export default function Sprints() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
   const startSprint = async (sprintId) => {
     try {
       const updated = await post(`/sprints/${sprintId}/start`, {});
       setSprints(sprints.map(s => s.id === sprintId ? updated : s));
-      showToast('Sprint started');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast('Sprint started');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const completeSprint = async (sprintId) => {
     try {
       const updated = await post(`/sprints/${sprintId}/complete`, {});
       setSprints(sprints.map(s => s.id === sprintId ? updated : s));
-      showToast('Sprint completed');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast('Sprint completed');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const createSprint = async (e) => {
@@ -44,17 +40,29 @@ export default function Sprints() {
       const sprint = await post('/sprints', { name: newName, projectId: Number(id) });
       setSprints([sprint, ...sprints]);
       setNewName(''); setShowCreate(false);
-      showToast('Sprint created');
-    } catch (err) { showToast(err.message, 'error'); }
+      addToast('Sprint created');
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
-  if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div><h3>Loading sprints...</h3></div>;
+  if (loading) return (
+    <div>
+      <div className="skeleton" style={{ height: 14, width: 200, marginBottom: 16 }} />
+      <div className="flex justify-between items-center mb-16">
+        <div>
+          <div className="skeleton skeleton-text-lg" style={{ width: 200 }} />
+          <div className="skeleton skeleton-text-sm" style={{ width: 120 }} />
+        </div>
+        <div className="skeleton" style={{ width: 160, height: 36, borderRadius: 4 }} />
+      </div>
+      {[1, 2, 3].map(i => (
+        <div key={i} className="skeleton skeleton-card" style={{ marginBottom: 8, height: 60 }} />
+      ))}
+    </div>
+  );
   if (!project) return <div className="empty-state"><div className="empty-icon">⚠️</div><h3>Project not found</h3></div>;
 
   return (
     <div>
-      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-
       <div className="detail-breadcrumb mb-8">
         <Link to="/">Dashboard</Link> / <Link to={`/projects/${id}`}>{project.name}</Link> / <span>Sprints</span>
       </div>

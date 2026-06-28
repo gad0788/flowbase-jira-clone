@@ -1,18 +1,38 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { get, post } from '../api';
+import { useToast } from '../ToastContext';
+import { SkeletonText } from '../Skeleton';
 
 const COLORS = ['#0052cc', '#00875a', '#de350b', '#ff8b00', '#6942b5', '#00b8d9', '#344563', '#e34900'];
 
 export default function Dashboard({ search }) {
   const [projects, setProjects] = useState([]);
+  const [projectStats, setProjectStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newKey, setNewKey] = useState('');
   const [newName, setNewName] = useState('');
+  const addToast = useToast();
 
   useEffect(() => {
-    get('/projects').then(setProjects).finally(() => setLoading(false));
+    get('/projects').then(async (projects) => {
+      setProjects(projects);
+      const stats = {};
+      const results = await Promise.allSettled(
+        projects.map(p => get(`/issues/project/${p.id}`).then(issues => ({ projectId: p.id, issues })))
+      );
+      results.forEach(r => {
+        if (r.status === 'fulfilled') {
+          const { projectId, issues } = r.value;
+          stats[projectId] = {};
+          for (const i of issues) {
+            stats[projectId][i.status] = (stats[projectId][i.status] || 0) + 1;
+          }
+        }
+      });
+      setProjectStats(stats);
+    }).finally(() => setLoading(false));
   }, []);
 
   const createProject = async (e) => {
@@ -21,14 +41,37 @@ export default function Dashboard({ search }) {
       const p = await post('/projects', { key: newKey.toUpperCase(), name: newName });
       setProjects([...projects, p]);
       setNewKey(''); setNewName(''); setShowCreate(false);
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const filtered = projects.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.key.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div><h3>Loading projects...</h3></div>;
+  if (loading) return (
+    <div>
+      <div className="flex justify-between items-center mb-16">
+        <div>
+          <div className="skeleton skeleton-text-lg" style={{ width: 200 }} />
+          <div className="skeleton skeleton-text-sm" style={{ width: 120 }} />
+        </div>
+        <div className="skeleton" style={{ width: 160, height: 36, borderRadius: 4 }} />
+      </div>
+      <div className="project-grid">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="card">
+            <div className="flex gap-12 items-center">
+              <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 6 }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+                <div className="skeleton skeleton-text-sm" style={{ width: '30%' }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -67,14 +110,19 @@ export default function Dashboard({ search }) {
 
       <div className="project-grid">
         {filtered.map((p, i) => (
-          <ProjectCard key={p.id} project={p} color={COLORS[i % COLORS.length]} />
+          <ProjectCard key={p.id} project={p} stats={projectStats[p.id]} color={COLORS[i % COLORS.length]} />
         ))}
       </div>
     </div>
   );
 }
 
-function ProjectCard({ project: p, color }) {
+function ProjectCard({ project: p, stats, color }) {
+  const total = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+  const STATUS_ORDER = ['BACKLOG', 'TO_DO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'];
+  const STATUS_LABELS = { BACKLOG: 'Backlog', TO_DO: 'To Do', IN_PROGRESS: 'In Progress', IN_REVIEW: 'In Review', DONE: 'Done' };
+  const STATUS_COLORS = { BACKLOG: '#97a0af', TO_DO: '#4c9aff', IN_PROGRESS: '#0052cc', IN_REVIEW: '#ff8b00', DONE: '#36b37e' };
+
   return (
     <div className="project-card">
       <div className="project-top">
@@ -89,6 +137,21 @@ function ProjectCard({ project: p, color }) {
         <div className="flex items-center gap-8" style={{ fontSize: 13, color: '#5e6c84', marginBottom: 12 }}>
           <span className="avatar avatar-sm avatar-blue">{p.lead.displayName.charAt(0)}</span>
           Lead: {p.lead.displayName}
+        </div>
+      )}
+      {total > 0 && (
+        <div className="project-stats">
+          {STATUS_ORDER.map(s => {
+            const count = stats[s] || 0;
+            if (!count) return null;
+            return (
+              <div key={s} className="stat-item">
+                <span className="stat-bar" style={{ width: `${(count / total) * 100}%`, background: STATUS_COLORS[s] }} />
+                <span className="stat-label">{STATUS_LABELS[s]}</span>
+                <span className="stat-count">{count}</span>
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="project-actions">

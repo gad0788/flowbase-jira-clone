@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import ErrorBoundary from './ErrorBoundary';
+import { ToastProvider } from './ToastContext';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
 import IssueDetail from './pages/IssueDetail';
@@ -275,15 +277,19 @@ export default function App() {
       {showSidebar && <Sidebar />}
 
       <main className={`main-content ${!showSidebar ? 'wide' : ''}`}>
-        <Routes>
-          <Route path="/" element={<Dashboard search={search} />} />
-          <Route path="/projects/:id" element={<Board />} />
-          <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
-          <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
-          <Route path="/projects/:id/sprints" element={<Sprints />} />
-          <Route path="/login" element={<Login onAuth={handleAuth} />} />
-          <Route path="/register" element={<Register onAuth={handleAuth} />} />
-        </Routes>
+        <ErrorBoundary>
+          <ToastProvider>
+            <Routes>
+              <Route path="/" element={<Dashboard search={search} />} />
+              <Route path="/projects/:id" element={<Board />} />
+              <Route path="/projects/:id/issues/new" element={<CreateIssue />} />
+              <Route path="/projects/:id/issues/:issueId" element={<IssueDetail />} />
+              <Route path="/projects/:id/sprints" element={<Sprints />} />
+              <Route path="/login" element={<Login onAuth={handleAuth} />} />
+              <Route path="/register" element={<Register onAuth={handleAuth} />} />
+            </Routes>
+          </ToastProvider>
+        </ErrorBoundary>
       </main>
     </div>
   );

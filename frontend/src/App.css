@@ -194,7 +194,7 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
 
 /* === Main Content === */
 .main-content {
-  flex: 1; overflow-y: auto; padding: 24px 32px; min-height: 0;
+  flex: 1; overflow-y: auto; padding: 16px 20px; min-height: 0;
 }
 
 /* === Buttons === */
@@ -313,7 +313,7 @@ input[type="number"] { -moz-appearance: textfield; }
 .avatar-purple { background: #eae6ff; color: #403294; }
 
 /* === Board === */
-.board { display: flex; gap: 12px; min-height: calc(100vh - 200px); }
+.board { display: flex; gap: 12px; min-height: 0; }
 .column {
   flex: 1; min-width: 200px; background: var(--bg);
   border-radius: var(--radius); padding: 8px;

@@ -208,10 +208,11 @@ public class IssueServiceImpl implements IssueService {
                 .map(Project::getKey)
                 .orElseThrow(() -> new EntityNotFoundException("Project not found: " + projectId));
         ProjectSequence seq = projectSequenceRepository.findByProjectId(projectId)
-                .orElseGet(() -> projectSequenceRepository.save(new ProjectSequence(projectId, 1L)));
-        seq.setCurrentValue(seq.getCurrentValue() + 1);
+                .orElseGet(() -> projectSequenceRepository.save(new ProjectSequence(projectId, 0L)));
+        long value = seq.getCurrentValue() + 1;
+        seq.setCurrentValue(value);
         projectSequenceRepository.save(seq);
-        return projectKey + "-" + seq.getCurrentValue();
+        return projectKey + "-" + value;
     }
 
     private Set<String> resolveLabelNames(Set<String> labelNames) {

@@ -2,13 +2,16 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { get, post } from '../api';
 import { useToast } from '../ToastContext';
-import { SkeletonText } from '../Skeleton';
 
 const COLORS = ['#0052cc', '#00875a', '#de350b', '#ff8b00', '#6942b5', '#00b8d9', '#344563', '#e34900'];
+const STATUS_ORDER = ['BACKLOG', 'TO_DO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'];
+const STATUS_LABELS = { BACKLOG: 'Backlog', TO_DO: 'To Do', IN_PROGRESS: 'In Progress', IN_REVIEW: 'In Review', DONE: 'Done' };
+const STATUS_COLORS = { BACKLOG: '#97a0af', TO_DO: '#4c9aff', IN_PROGRESS: '#0052cc', IN_REVIEW: '#ff8b00', DONE: '#36b37e' };
 
 export default function Dashboard({ search }) {
   const [projects, setProjects] = useState([]);
   const [projectStats, setProjectStats] = useState({});
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newKey, setNewKey] = useState('');
@@ -16,8 +19,9 @@ export default function Dashboard({ search }) {
   const addToast = useToast();
 
   useEffect(() => {
-    get('/projects').then(async (projects) => {
+    Promise.all([get('/projects'), get('/users')]).then(async ([projects, users]) => {
       setProjects(projects);
+      setUsers(users);
       const stats = {};
       const results = await Promise.allSettled(
         projects.map(p => get(`/issues/project/${p.id}`).then(issues => ({ projectId: p.id, issues })))
@@ -34,6 +38,15 @@ export default function Dashboard({ search }) {
       setProjectStats(stats);
     }).finally(() => setLoading(false));
   }, []);
+
+  const totalIssues = Object.values(projectStats).reduce((sum, s) => sum + Object.values(s).reduce((a, b) => a + b, 0), 0);
+  const totalByStatus = {};
+  for (const s of Object.values(projectStats)) {
+    for (const [status, count] of Object.entries(s)) {
+      totalByStatus[status] = (totalByStatus[status] || 0) + count;
+    }
+  }
+  const maxStatusCount = Math.max(...Object.values(totalByStatus), 1);
 
   const createProject = async (e) => {
     e.preventDefault();
@@ -85,6 +98,55 @@ export default function Dashboard({ search }) {
         </button>
       </div>
 
+      {projects.length > 0 && (
+        <div className="sys-dashboard">
+          <div className="sys-dashboard-header">
+            <span className="sys-dashboard-icon">📊</span>
+            <div>
+              <h2 className="mb-0">System Dashboard</h2>
+              <span className="text-muted" style={{ fontSize: 12 }}>Across all projects</span>
+            </div>
+          </div>
+          <div className="sys-dashboard-cards">
+            <div className="sys-stat-card">
+              <span className="sys-stat-icon">📁</span>
+              <div className="sys-stat-value">{projects.length}</div>
+              <div className="sys-stat-label">Projects</div>
+            </div>
+            <div className="sys-stat-card">
+              <span className="sys-stat-icon">📝</span>
+              <div className="sys-stat-value">{totalIssues}</div>
+              <div className="sys-stat-label">Total Issues</div>
+            </div>
+            <div className="sys-stat-card">
+              <span className="sys-stat-icon">👥</span>
+              <div className="sys-stat-value">{users.length}</div>
+              <div className="sys-stat-label">Users</div>
+            </div>
+          </div>
+          {totalIssues > 0 && (
+            <div className="sys-status-breakdown">
+              <div className="sys-status-title">Status Breakdown</div>
+              <div className="sys-status-bars">
+                {STATUS_ORDER.map(s => {
+                  const count = totalByStatus[s] || 0;
+                  if (!count && s !== 'BACKLOG') return null;
+                  return (
+                    <div key={s} className="sys-status-row">
+                      <span className="sys-status-name">{STATUS_LABELS[s]}</span>
+                      <div className="sys-status-track">
+                        <div className="sys-status-fill" style={{ width: `${(count / maxStatusCount) * 100}%`, background: STATUS_COLORS[s] }} />
+                      </div>
+                      <span className="sys-status-count">{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {showCreate && (
         <form onSubmit={createProject} className="card flex gap-12 items-center" style={{ marginBottom: 20, padding: 16 }}>
           <div className="form-group mb-0" style={{ flex: '0 0 120px' }}>
@@ -108,6 +170,8 @@ export default function Dashboard({ search }) {
         </div>
       )}
 
+      <h2 className="mb-16" style={{ fontSize: 16, fontWeight: 600 }}>All Projects</h2>
+
       <div className="project-grid">
         {filtered.map((p, i) => (
           <ProjectCard key={p.id} project={p} stats={projectStats[p.id]} color={COLORS[i % COLORS.length]} />
@@ -119,9 +183,6 @@ export default function Dashboard({ search }) {
 
 function ProjectCard({ project: p, stats, color }) {
   const total = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
-  const STATUS_ORDER = ['BACKLOG', 'TO_DO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'];
-  const STATUS_LABELS = { BACKLOG: 'Backlog', TO_DO: 'To Do', IN_PROGRESS: 'In Progress', IN_REVIEW: 'In Review', DONE: 'Done' };
-  const STATUS_COLORS = { BACKLOG: '#97a0af', TO_DO: '#4c9aff', IN_PROGRESS: '#0052cc', IN_REVIEW: '#ff8b00', DONE: '#36b37e' };
 
   return (
     <div className="project-card">

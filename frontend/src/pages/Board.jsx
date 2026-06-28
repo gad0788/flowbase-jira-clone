@@ -13,11 +13,17 @@ const PRIORITY_ICONS = {
 
 function IssueCard({ issue, projectId, onTransition }) {
   const [dragging, setDragging] = useState(false);
+  const addToast = useToast();
 
   const onDragStart = (e) => {
     setDragging(true);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify({ id: issue.id, status: issue.status }));
+  };
+
+  const copyKey = () => {
+    navigator.clipboard.writeText(issue.key);
+    addToast(`Copied ${issue.key}`);
   };
 
   return (
@@ -28,7 +34,7 @@ function IssueCard({ issue, projectId, onTransition }) {
       onDragEnd={() => setDragging(false)}
     >
       <div className="card-top">
-        <span className="key">{issue.key}</span>
+        <span className="key" onClick={copyKey} style={{ cursor: 'pointer' }}>{issue.key}</span>
         <span className={`priority-icon priority-${issue.priority}`} title={issue.priority}>
           {PRIORITY_ICONS[issue.priority] || '◆'}
         </span>
@@ -67,6 +73,7 @@ export default function Board() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const [compact, setCompact] = useState(false);
   const addToast = useToast();
 
   useEffect(() => {
@@ -118,12 +125,15 @@ export default function Board() {
           <span className="text-muted" style={{ fontSize: 13 }}>{project.key} · {issues.length} issues</span>
         </div>
         <div className="flex gap-8">
+          <button className="btn btn-secondary btn-lg" onClick={() => setCompact(c => !c)}>
+            {compact ? '⊟ Normal' : '⊞ Compact'}
+          </button>
           <Link to={`/projects/${id}/sprints`} className="btn btn-secondary btn-lg">Sprints</Link>
           <Link to={`/projects/${id}/issues/new`} className="btn btn-lg">+ Create Issue</Link>
         </div>
       </div>
 
-      <div className="board">
+      <div className={`board${compact ? ' compact' : ''}`}>
         {issues.length === 0 ? (
           <div className="empty-state" style={{ gridColumn: '1 / -1', padding: 48 }}>
             <div className="empty-icon">📝</div>

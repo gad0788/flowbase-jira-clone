@@ -30,19 +30,19 @@ export default function Login({ onAuth }) {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32"><path d="M11.53 2.59L5.39 9.46a1.02 1.02 0 000 1.4l8.41 8.97c.36.39 1 .39 1.37 0l6.14-6.87a1.02 1.02 0 000-1.4L12.9 2.59a.93.93 0 00-1.37 0z"/><path d="M6.66 11.29L2.4 7.75a.84.84 0 010-1.21l4.35-3.85" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          <h1>Flowbase Jira</h1>
+          <svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40"><path d="M11.53 2.59L5.39 9.46a1.02 1.02 0 000 1.4l8.41 8.97c.36.39 1 .39 1.37 0l6.14-6.87a1.02 1.02 0 000-1.4L12.9 2.59a.93.93 0 00-1.37 0z"/><path d="M6.66 11.29L2.4 7.75a.84.84 0 010-1.21l4.35-3.85" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         </div>
-        <h2>Sign in</h2>
+        <h1 className="auth-welcome">Welcome to Flowbase Jira</h1>
+        <p className="auth-subtitle">Enter your credentials to continue.</p>
         {error && <div className="auth-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="auth-field">
             <label>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@flowbase.com" required />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required />
           </div>
           <div className="auth-field">
             <label>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="password" required />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required />
           </div>
           <button type="submit" className="auth-btn" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
         </form>

@@ -53,7 +53,7 @@ export default function CreateIssue() {
 
       <h1>Create Issue</h1>
 
-      <form onSubmit={handleSubmit} className="card" style={{ maxWidth: 680, padding: 24 }}>
+      <form onSubmit={handleSubmit} className="card" style={{ padding: 24 }}>
         <div className="form-group">
           <label>Summary <span className="text-danger" style={{ color: '#de350b' }}>*</span></label>
           <input name="summary" value={form.summary} onChange={handleChange}

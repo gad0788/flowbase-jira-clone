@@ -135,7 +135,7 @@ export default function IssueDetail() {
 
       <div className="detail-header">
         <div>
-          <h1><span className="key">{issue.key}</span> {editing ? (
+          <h1><span className="key" onClick={() => { navigator.clipboard.writeText(issue.key); addToast(`Copied ${issue.key}`); }} style={{ cursor: 'pointer' }}>{issue.key}</span> {editing ? (
             <input value={editForm.summary} name="summary" onChange={handleEditChange}
               style={{ fontSize: 22, fontWeight: 600, border: '2px solid #4c9aff', borderRadius: 4, padding: '4px 10px', width: '70%', fontFamily: 'inherit' }} />
           ) : issue.summary}</h1>
